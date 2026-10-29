@@ -260,10 +260,21 @@ def publish(body):
     url=f'https://api.github.com/repos/{repo}/contents/index.html'
     headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'NHL-Daily'}
     with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=30) as r: old=json.load(r)
-    if base64.b64decode(old['content']).decode()==body: return
-    data=json.dumps({'message':'Update NHL Daily report','sha':old['sha'],'branch':'main','content':base64.b64encode(body.encode()).decode()}).encode()
-    with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=headers,method='PUT'),timeout=30) as r: result=json.load(r)
-    print('Published report commit '+result['commit']['sha'])
+    if base64.b64decode(old['content']).decode()!=body:
+        data=json.dumps({'message':'Update NHL Daily report','sha':old['sha'],'branch':'main','content':base64.b64encode(body.encode()).decode()}).encode()
+        with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=headers,method='PUT'),timeout=30) as r: result=json.load(r)
+        print('Saved report commit '+result['commit']['sha'])
+    # GITHUB_TOKEN commits don't automatically trigger Pages; request a build explicitly.
+    build_url=f'https://api.github.com/repos/{repo}/pages/builds'
+    with urllib.request.urlopen(urllib.request.Request(build_url,data=b'{}',headers=headers,method='POST'),timeout=30) as r: json.load(r)
+    public=f'https://{repo.split("/")[0]}.github.io/{repo.split("/")[1]}/'
+    for attempt in range(24):
+        try:
+            with urllib.request.urlopen(public+'?check='+str(int(time.time())),timeout=20) as r: live=r.read().decode()
+            if live==body: print('Live GitHub Pages report verified');return
+        except Exception: pass
+        time.sleep(10)
+    raise RuntimeError('Report committed, but live Pages deployment not verified yet')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--date');p.add_argument('--preview',action='store_true');args=p.parse_args()
