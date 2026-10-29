@@ -11,6 +11,7 @@ on:
         default: true
 permissions:
   contents: write
+  pages: write
 concurrency:
   group: nhl-daily-delivery
   cancel-in-progress: false
