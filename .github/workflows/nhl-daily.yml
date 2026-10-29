@@ -1,0 +1,51 @@
+name: NHL Daily Email
+on:
+  schedule:
+    - cron: '0,20 6 * * *'
+      timezone: America/Los_Angeles
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: Build a report without sending email or publishing
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: nhl-daily-delivery
+  cancel-in-progress: false
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Test delivery safeguards
+        run: python -m unittest discover -s tests -v
+      - name: Research, render, and deliver
+        env:
+          PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.preview }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$PREVIEW" = "true" ]; then
+            python scripts/daily.py --preview
+          else
+            python scripts/daily.py
+          fi
+      - name: Save report and research links
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nhl-daily-${{ github.run_id }}
+          path: build/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Failure guidance
+        if: failure()
+        run: echo '::error::NHL Daily failed. Review failed step and repository Actions notifications. The next scheduled attempt remains enabled; website failure never blocks email.'
